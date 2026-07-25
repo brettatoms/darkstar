@@ -1,6 +1,6 @@
 (ns darkstar.reconnect-test
   "The reconnect path end to end: snapshot out, server dies, snapshot back in,
-  view rebuilt. See DESIGN.md §3, §5.1, §5.4.
+  view rebuilt. See , , 
 
   This is the project's thesis under test. Everything else built so far is
   roughly what Ripley already does; surviving a disconnect with state intact is
@@ -110,7 +110,7 @@
     (is (= 2 (:n view)) "derived still computed")))
 
 (deftest mount-and-reconnect-agree-when-there-is-nothing-to-restore
-  ;; The convergence invariant (§6) at the connection level: with no recoverable
+  ;; The convergence invariant at the connection level: with no recoverable
   ;; state, a reconnect must produce exactly what a cold mount produces. If these
   ;; diverge, a reconnect shows the user a different page than a fresh load.
   (let [[_ eng] (fixture)
@@ -171,11 +171,11 @@
       (is (= {:user 7} (:params data)))
       (testing "only recoverable fields, so the snapshot stays small"
         (is (= {:draft "typed"} (:recoverable data))))
-      (testing "no :basis yet — the Source protocol (§7.1) is unwritten"
+      (testing "no :basis yet — the Source protocol is unwritten"
         (is (not (contains? data :basis)))))))
 
 (deftest the-snapshot-stays-small
-  ;; It rides in a datastar signal, so size is a real constraint (§5.4).
+  ;; It rides in a datastar signal, so size is a real constraint.
   (let [[_ eng] (fixture)
         id (engine/connect! eng :c {:send! (fn [_]) :params {:user 7}})]
     (engine/mount! eng id {})

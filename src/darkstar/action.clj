@@ -1,7 +1,7 @@
 (ns darkstar.action
   "Builds the client-side expressions that invoke `:on` handlers.
 
-  `DESIGN.md` §5.4.1, which recorded this as \"unresolved, and currently unsound\".
+  1, which recorded this as \"unresolved, and currently unsound\".
   This namespace resolves it. The problem was not ergonomics — it was that the
   hand-written form was *wrong*:
 
@@ -44,26 +44,26 @@
 
   ## `liveId` has to be merged in
 
-  Not anticipated by §5.4.1. `payload` **replaces** the signals datastar would
+  Not anticipated by  `payload` **replaces** the signals datastar would
   otherwise send, and `liveId` is a server-pushed *signal* — so a bare payload
   drops it and every action fails with \"no live context\". The expression therefore
   merges the live-id signal back in explicitly with datastar's `$` syntax.
 
   ## Why the path is a parameter
 
-  §5.4.1's third question. The dispatch path belongs to whatever mounted the route,
-  so hardcoding `/live/act` here would reintroduce exactly the drift §5.0 removed
+  The dispatch path belongs to whatever mounted the route,
+  so hardcoding `/live/act` here would reintroduce exactly the drift  removed
   for element ids. Callers pass it; adapters supply it from their own config.
 
   ## No arg schemas, deliberately
 
-  §5.4.1 asked whether `:on` handlers should declare arg schemas. They do not, for
-  now. Types survive the wire on their own once args are JSON, which was the
+  Whether `:on` handlers should declare arg schemas is deliberately unsettled.
+  They do not, for now. Types survive the wire on their own once args are JSON, which was the
   actual complaint. Adding an optional `:args` predicate later is additive — it
   slots in front of the handler call without changing this wire format or any
-  existing handler — so the cheap version is not a dead end. Tracked in §12.
+  existing handler — so the cheap version is not a dead end. Tracked in 
 
-  Dependency-free, like the rest of the core (§2): the JSON writer below is a few
+  Dependency-free, like the rest of the core: the JSON writer below is a few
   lines rather than a reason to put charred on the core's classpath. It follows
   `snapshot`, which hand-rolls its own encoding for the same reason."
   (:refer-clojure :exclude [get])

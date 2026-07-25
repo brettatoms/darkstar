@@ -7,7 +7,7 @@
   pair is deliberate, and the split is the clearest statement of where the seam is:
   remuda owns \"which paths changed\", darkstar owns \"which elements to patch\".
 
-  No server either way: `send!` records instead of sending (§2.1)."
+  No server either way: `send!` records instead of sending."
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [darkstar.engine :as d*engine]
@@ -89,14 +89,14 @@
   d*engine/dispatch-opts)
 
 ;;; ==========================================================================
-;;; Lifecycle — §2.1 requires construction to start nothing
+;;; Lifecycle — construction must start nothing
 ;;; ==========================================================================
 
 (deftest construction-starts-nothing
   (let [eng (test-engine)]
     (is (false? @(:started? eng)))
     (is (= {} @(:registry eng)))
-    (testing "the engine is a map of pieces, per §2.1"
+    (testing "the engine is a map of pieces"
       (is (every? #(contains? eng %)
                   [:components :render-fn :registry :started?])))))
 
@@ -118,7 +118,7 @@
     (is (true? @closed))))
 
 (deftest registry-can-be-supplied
-  ;; §9.3 requires the registry to survive namespace reload, which means the
+  ;; The registry must survive namespace reload, which means the
   ;; caller must own it. Verified rather than assumed.
   (let [reg (atom {})
         eng (engine/engine {:components {:counter counter}
@@ -195,7 +195,7 @@
                  (engine/dispatch! eng id :nope nil dispatch-opts)))))
 
 ;;; ==========================================================================
-;;; The §2.2 seam: rendering one boundary
+;;; The  seam: rendering one boundary
 ;;; ==========================================================================
 ;;; :render takes the whole view, so there is no general way to get the HTML for
 ;;; one boundary. Without :render-at the engine must widen the patch to the
@@ -229,7 +229,7 @@
 ;;; ==========================================================================
 ;;; refresh! — the hint-driven path
 ;;; ==========================================================================
-;;; A PubSub hint carries no data (§7.2), so the only correct reaction is to
+;;; A PubSub hint carries no data, so the only correct reaction is to
 ;;; re-read the source of truth. refresh! does that and PUSHES the diff, which is
 ;;; what distinguishes it from reconnect! — the latter returns full HTML for a new
 ;;; connection. Without refresh! there is no path from a hint to a browser, a gap
@@ -297,7 +297,7 @@
 ;;; ==========================================================================
 ;;; REPL-driven development
 ;;; ==========================================================================
-;;; DESIGN.md §9.4 claims a developer can redefine :render and see an
+;;;  claims a developer can redefine :render and see an
 ;;; already-connected context reflect it with state intact. That claim was
 ;;; unverified and false: the live context stored the component map captured at
 ;;; connect! time, so a redefinition left every connection rendering the old
@@ -436,7 +436,7 @@
   ;; The engine identifies a root render structurally (`:root? true`) but cannot
   ;; build the root *target* without knowing what a target is, so it delegates to
   ;; `:retarget-fn`. Omit that and the patch keeps `#c1-n` while carrying the whole
-  ;; `<div>` — the §5.0 mismatch, silent in the browser until the DOM is corrupt.
+  ;; `<div>` — the  mismatch, silent in the browser until the DOM is corrupt.
   ;;
   ;; This is the second widening case, distinct from the one `patch` detects during
   ;; path resolution: here the boundary is claimed at translation time but the

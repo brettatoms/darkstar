@@ -3,7 +3,7 @@
   instructions.
 
   This is the seam between the data model and the DOM model, and it is the part
-  `PLAN.md` §2.2 predicted would be wrong. The diff engine says \"path
+  2 predicted would be wrong. The diff engine says \"path
   `[:items 2]` changed\"; datastar needs a CSS selector and a patch mode.
 
   Deliberately dependency-free: this namespace emits *descriptions* of patches
@@ -11,7 +11,7 @@
 
   1. It stays testable with no server, no SSE connection, and no SDK on the
      classpath — the same property that made the diff engine cheap to verify.
-  2. It keeps the transport seam narrow (`PLAN.md` §2.4). The SDK's own seam is
+  2. It keeps the transport seam narrow . The SDK's own seam is
      a four-method `SSEGenerator` protocol, so whatever applies these
      descriptions is the only part that needs to know about a server.
   3. Op order is part of the diff contract (move ops are not commutative), and a
@@ -30,7 +30,7 @@
 
   ## Boundaries: not every path owns an element
 
-  The load-bearing correction found while building this (`PLAN.md` §2.2). The
+  The load-bearing correction found while building this . The
   first version of this namespace assumed every view path maps to a DOM element,
   and derived a selector directly from the path. That is wrong: paths are finer
   grained than elements. Given
@@ -147,7 +147,7 @@
         ;; Prefer the id the RENDER emitted for this boundary; fall back to the
         ;; derived scheme only when no rendered id is known (hand-declared
         ;; boundary sets, and tests). Preferring the rendered id is what makes a
-        ;; selector/element mismatch impossible — see PLAN.md phase 2 findings.
+        ;; selector/element mismatch impossible.
         sel (fn [p]
               (if-let [rid (get boundary-ids (vec p))]
                 (str "#" rid)

@@ -1,7 +1,7 @@
 (ns darkstar.action-test
-  "Tests for the action expression builder (DESIGN.md §5.4.1).
+  "Tests for the action expression builder.
 
-  The three defects §5.4.1 recorded are each pinned by a test that **fails against
+  The three defects  recorded are each pinned by a test that **fails against
   the old query-string form**, which is the only way to know these assert anything.
   Earlier in this project a pruning test suite passed 41 assertions with the
   optimisation sabotaged, so a test that cannot fail is treated here as no test."
@@ -64,7 +64,7 @@
     (is (= "\"\\u003c/script>\"" (action/write-json "</script>")))))
 
 ;;; ==========================================================================
-;;; The three defects from §5.4.1
+;;; The three defects from 
 ;;; ==========================================================================
 ;;; Each of these is written to fail against the old form. The old form is
 ;;; reproduced here so the comparison is explicit rather than asserted.
@@ -131,7 +131,7 @@
     (is (not (str/includes? expr "\"$liveId\"")))))
 
 (deftest act-path-is-a-parameter
-  ;; §5.4.1's third question: the path belongs to whoever mounted the route.
+  ;; 's third question: the path belongs to whoever mounted the route.
   (is (str/starts-with? (action/post "/custom/dispatch" :inc)
                         "@post('/custom/dispatch'"))
   (is (str/includes? (action/put path :inc) "@put(")))

@@ -1,10 +1,10 @@
 (ns fanout
   "Fan-out benchmark: what does one hint to N subscribed viewers actually cost?
 
-  `DESIGN.md` §7.2 quantified re-derive amplification against a trivial in-memory
+  2 quantified re-derive amplification against a trivial in-memory
   mount. That left the decisive question open: **do queries or the wire dominate?**
-  It matters because shared derivation (§7.2.1) only eliminates query cost. If the
-  wire dominates, §7.2.1 is the wrong optimisation and the 1000x on paper is
+  It matters because shared derivation only eliminates query cost. If the
+  wire dominates,  is the wrong optimisation and the 1000x on paper is
   mostly theoretical.
 
   Run:
@@ -15,7 +15,6 @@
   - **The `Source` does real I/O** (SQLite, on disk). An atom-backed source makes
     per-viewer derivation ~free and forces the conclusion \"the wire dominates\"
     regardless of truth — measured at 0.05us versus 148us, a 3,064x difference.
-    §7.1 records this.
   - **Stages are timed separately** rather than inferred from a total, so \"queries
     vs wire\" is measured rather than attributed.
   - **`send!` is instrumented, not faked away.** Serialising a patch to a string is
@@ -159,7 +158,7 @@
 
   The component declares a `:derive-key` over list-id, which is what these viewers
   actually differ by — and, critically, is the *whole* of what `:mount` reads here.
-  A real multitenant app would have to include the tenant (§7.2.1)."
+  A real multitenant app would have to include the tenant."
   [ds n]
   (let [src (sqlite-source ds)
         c (cache/cache)
@@ -201,7 +200,7 @@
        :stats (cache/stats c) :ids ids})))
 
 (defn- shared-derivation-estimate
-  "What §7.2.1 would save: one query per distinct params instead of one per viewer."
+  "What  would save: one query per distinct params instead of one per viewer."
   [ds n distinct-params]
   (let [src (sqlite-source ds)]
     ;; Warm the page cache so this is not measuring first-read disk.
@@ -237,7 +236,7 @@
       (println (format "  => queries are %.0f%% of a rebuild" (* 100.0 (/ q total))))
       (println (format "  wire volume:              %8.1f KB" (/ (:bytes r) 1024.0))))
     (println)
-    (println "=== What shared derivation (§7.2.1) would save ===")
+    (println "=== What shared derivation would save ===")
     (let [{:keys [naive-ns shared-ns]} (shared-derivation-estimate ds 1000 50)]
       (println (format "  1000 viewers, one query each: %8.1f ms" (ms naive-ns)))
       (println (format "  50 distinct params, shared:   %8.1f ms" (ms shared-ns)))
@@ -254,5 +253,5 @@
                          (:fragment-hits st) (:fragment-misses st)))))
     (println "  (d: derived hits/misses, f: fragment hits/misses)")
     (println)
-    (println "Interpretation is in PLAN.md; numbers above are the evidence.")
+    (println "Numbers above are the evidence; interpretation is elsewhere.")
     (System/exit 0)))

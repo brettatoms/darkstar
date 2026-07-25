@@ -24,7 +24,7 @@
   actually mark. The engine then re-renders the component root, and the patch's
   target has to widen with it. Without it the patch keeps its child selector while
   carrying root HTML — `#c1-n` receiving the whole `<div>` — which is exactly the
-  mismatch §5.0 exists to prevent.
+  mismatch that reading ids from the render exists to prevent.
 
   The engine cannot construct that target itself without knowing what a target
   *is*, so it asks. That indirection is the seam: remuda says \"the root\", darkstar

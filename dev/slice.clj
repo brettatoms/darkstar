@@ -1,9 +1,9 @@
 (ns slice
-  "The phase 2 vertical slice (`PLAN.md` §2): one component, bare Ring, real
+  "The phase 2 vertical slice : one component, bare Ring, real
   browser, real datastar.
 
   Not part of the library. This lives under `dev/` and the `:slice` alias so the
-  core stays dependency-free — `PLAN.md` §2.4 is enforced by the dependency
+  core stays dependency-free — 4 is enforced by the dependency
   graph, not by intent.
 
   Run:
@@ -11,7 +11,7 @@
   then open http://localhost:3000
 
   What this is for: finding out where the design is wrong. In particular the
-  §2.2 seam (rendering one boundary) and whether the engine's transport-agnostic
+  seam of rendering one boundary, and whether the engine's transport-agnostic
   `send!` really is enough to drive datastar."
   (:require [charred.api :as charred]
             [clojure.java.io :as io]
@@ -40,7 +40,7 @@
 (def ^:private act-path
   "The dispatch route, named once.
 
-  §5.4.1: the path belongs to whoever mounted the route, so `action/post` takes it
+  The path belongs to whoever mounted the route, so `action/post` takes it
   as an argument rather than hardcoding it. Here that owner is `handler` below; a
   real adapter reads it from its own route config."
   "/act")
@@ -135,7 +135,7 @@
 ;;; ==========================================================================
 ;;; This is the ONLY place that knows about datastar or a server. The engine
 ;;; hands over instructions; this turns them into SSE events. Keeping it this
-;;; small is what §2.4 asks for — swapping Jetty for http-kit should touch
+;;; small is what  asks for — swapping Jetty for http-kit should touch
 ;;; nothing above this line.
 
 (def ^:private mode->datastar
@@ -186,7 +186,7 @@
 ;;; Wiring
 ;;; ==========================================================================
 
-(defonce ^{:doc "Held outside the engine so it survives namespace reload (§9.3)."}
+(defonce ^{:doc "Held outside the engine so it survives namespace reload."}
   registry
   (atom {}))
 
@@ -266,7 +266,7 @@
   "Sends the recovery snapshot to the browser as an `_`-prefixed signal.
 
   The underscore matters: datastar excludes `_`-prefixed signals from ordinary
-  action requests (§11), so the snapshot costs nothing per interaction and is
+  action requests, so the snapshot costs nothing per interaction and is
   asked for explicitly only when reconnecting."
   [sse-gen id]
   (d*/patch-signals!
@@ -279,14 +279,14 @@
 
   Handles both first connection and reconnect. A browser that already holds a
   `_recovery` signal sends it with the request; if it verifies, its recoverable
-  state is replayed over a fresh mount (§5.4, §3). If it does not verify — a
+  state is replayed over a fresh mount. If it does not verify — a
   rotated secret, a tampered value — this degrades to a plain mount rather than
   failing, since a broken snapshot should cost the user their draft text, not
   their page.
 
   The parking is the point: the datastar Ring adapter closes the connection when
   a sync handler returns, so a long-lived LiveView connection must block. That
-  blocking thread is what §8 measured and what §8.1 questions — an event-driven
+  blocking thread is what  measured and what  questions — an event-driven
   server would not need it."
   [request]
   (let [;; Datastar sends non-underscore signals automatically; the recovery
@@ -329,7 +329,7 @@
   because the render side builds actions with `darkstar.action` and datastar
   sends a `payload` as the request body. `d*/get-signals` extracts it.
 
-  Args need **no coercion**, which is the fix for §5.4.1 defect 2. This handler
+  Args need **no coercion**, which is the fix for  defect 2. This handler
   used to do
 
       (assoc :id (parse-long (get params \"id\")))
@@ -371,9 +371,9 @@
 
 (defn -main
   [& _]
-  ;; Per §8: virtual threads, with maxConcurrentTasks raised. Left here at the
+  ;; : virtual threads, with maxConcurrentTasks raised. Left here at the
   ;; edge rather than inside the engine, since server config is adapter
-  ;; territory (§2.3).
+  ;; territory.
   (println "slice on http://localhost:3000")
   (jetty/run-jetty app {:port 3000
                         :join? true

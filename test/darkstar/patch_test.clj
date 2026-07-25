@@ -1,5 +1,5 @@
 (ns darkstar.patch-test
-  "Tests for diff-op -> datastar-patch translation. See PLAN.md §2.2."
+  "Tests for diff-op -> datastar-patch translation. See "
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [remuda.diff :as diff]
@@ -118,7 +118,7 @@
 ;;; ==========================================================================
 ;;; Boundary resolution
 ;;; ==========================================================================
-;;; The correction found in phase 2 (PLAN.md §2.2): not every view path owns a
+;;; The correction found in phase 2: not every view path owns a
 ;;; DOM element, so a path must resolve to its nearest declared boundary. The
 ;;; first implementation derived selectors straight from paths and produced
 ;;; selectors for text nodes, which match nothing and fail silently.
@@ -175,7 +175,7 @@
 ;;; ==========================================================================
 ;;; Every op the differ can emit must translate
 ;;; ==========================================================================
-;;; PLAN.md §1.3 made this a design constraint: nothing the diff engine emits
+;;;  made this a design constraint: nothing the diff engine emits
 ;;; may be unshippable. Asserted here rather than assumed.
 
 (deftest every-op-shape-translates

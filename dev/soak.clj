@@ -175,7 +175,7 @@
     (fn [sse-gen]
       ;; http-kit is event-driven: on-open returns immediately and the connection
       ;; is held by the event loop, so there is no thread to park. That is the
-      ;; structural difference §8.1 predicted would matter.
+      ;; structural difference  predicted would matter.
       (open! sse-gen (fn [_] nil)))}))
 
 ;;; ==========================================================================
@@ -297,7 +297,7 @@
                 ;; 200 and is a semaphore, so a blocking SSE handler holds a permit
                 ;; for the connection's life and client #201 never gets a handler.
                 ;; That default reads as "virtual threads cap at 200" and would make
-                ;; this comparison meaningless (§8).
+                ;; this comparison meaningless.
                 "jetty-vt" (let [s (jetty/run-jetty
                                     jetty-handler
                                     {:port port :join? false
