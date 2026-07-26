@@ -4,11 +4,8 @@
  ;; expressions and SSE framing, and none of that belongs in a library whose job is
  ;; holding view state.
  ;;
- ;; Sibling pins are the mutable SNAPSHOT while nothing is released. When the
- ;; libraries are tagged, these should become fixed versions — a published artifact
- ;; depending on a moving snapshot is fine for development and wrong for a release.
  :deps {org.clojure/clojure {:mvn/version "1.12.5"}
-        com.github.brettatoms/remuda {:mvn/version "0.1.9999-SNAPSHOT"}
+        com.github.brettatoms/remuda {:mvn/version "0.1.42"}
         dev.data-star.clojure/sdk {:mvn/version "1.0.0-RC11"}}
 
  :aliases {;; clojure -M:test
