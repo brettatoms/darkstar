@@ -4,10 +4,8 @@
  ;; expressions and SSE framing, and none of that belongs in a library whose job is
  ;; holding view state.
  ;;
- ;; During development remuda is a :local/root; switch to a released coordinate
- ;; before publishing.
  :deps {org.clojure/clojure {:mvn/version "1.12.5"}
-        com.github.brettatoms/remuda {:local/root "../remuda"}
+        com.github.brettatoms/remuda {:mvn/version "0.1.40"}
         dev.data-star.clojure/sdk {:mvn/version "1.0.0-RC11"}}
 
  :aliases {;; clojure -M:test
@@ -67,6 +65,11 @@
                   ;; penalised by the default 1MB reservation.
                   :jvm-opts ["-Xss512k" "-XX:+UseG1GC"
                              "-XX:-OmitStackTraceInFastThrow"]}
+
+           ;; clojure -T:build jar | deploy
+           :build {:deps {io.github.clojure/tools.build {:mvn/version "0.10.14"}
+                          slipset/deps-deploy {:mvn/version "0.2.5"}}
+                   :ns-default build}
 
            ;; clojure -M:clj-kondo --lint src test
            :clj-kondo {:replace-deps {clj-kondo/clj-kondo {:mvn/version "2026.05.25"}}
