@@ -4,6 +4,9 @@
  ;; expressions and SSE framing, and none of that belongs in a library whose job is
  ;; holding view state.
  ;;
+ ;; Sibling pins are the mutable SNAPSHOT while nothing is released. When the
+ ;; libraries are tagged, these should become fixed versions — a published artifact
+ ;; depending on a moving snapshot is fine for development and wrong for a release.
  :deps {org.clojure/clojure {:mvn/version "1.12.5"}
         com.github.brettatoms/remuda {:mvn/version "0.1.9999-SNAPSHOT"}
         dev.data-star.clojure/sdk {:mvn/version "1.0.0-RC11"}}
@@ -26,7 +29,7 @@
                                 org.clojure/tools.logging {:mvn/version "1.3.1"}
                                 ;; Benchmarks only: a Source doing real I/O, so
                                 ;; fan-out numbers are not an artifact of a free
-                                ;; in-memory fetch (§7.1).
+                                ;; in-memory fetch.
                                 org.xerial/sqlite-jdbc {:mvn/version "3.53.2.1"}
                                 com.github.seancorfield/next.jdbc {:mvn/version "1.3.1118"}}
                    :jvm-opts ["-XX:-OmitStackTraceInFastThrow"]}
