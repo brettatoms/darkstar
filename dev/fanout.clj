@@ -1,10 +1,11 @@
 (ns fanout
   "Fan-out benchmark: what does one hint to N subscribed viewers actually cost?
 
-  2 quantified re-derive amplification against a trivial in-memory
+  An earlier pass quantified re-derive amplification against a trivial in-memory
   mount. That left the decisive question open: **do queries or the wire dominate?**
   It matters because shared derivation only eliminates query cost. If the
-  wire dominates,  is the wrong optimisation and the 1000x on paper is
+  wire dominates, shared derivation is the wrong optimisation and the 1000x on
+  paper is
   mostly theoretical.
 
   Run:
@@ -200,7 +201,7 @@
        :stats (cache/stats c) :ids ids})))
 
 (defn- shared-derivation-estimate
-  "What  would save: one query per distinct params instead of one per viewer."
+  "What sharing would save: one query per distinct params instead of one per viewer."
   [ds n distinct-params]
   (let [src (sqlite-source ds)]
     ;; Warm the page cache so this is not measuring first-read disk.

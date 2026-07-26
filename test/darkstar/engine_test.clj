@@ -195,7 +195,7 @@
                  (engine/dispatch! eng id :nope nil dispatch-opts)))))
 
 ;;; ==========================================================================
-;;; The  seam: rendering one boundary
+;;; The hard seam: rendering one boundary
 ;;; ==========================================================================
 ;;; :render takes the whole view, so there is no general way to get the HTML for
 ;;; one boundary. Without :render-at the engine must widen the patch to the
@@ -436,7 +436,8 @@
   ;; The engine identifies a root render structurally (`:root? true`) but cannot
   ;; build the root *target* without knowing what a target is, so it delegates to
   ;; `:retarget-fn`. Omit that and the patch keeps `#c1-n` while carrying the whole
-  ;; `<div>` — the  mismatch, silent in the browser until the DOM is corrupt.
+  ;; `<div>` — a target/content mismatch, silent in the browser until the DOM is
+  ;; corrupt.
   ;;
   ;; This is the second widening case, distinct from the one `patch` detects during
   ;; path resolution: here the boundary is claimed at translation time but the

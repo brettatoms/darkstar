@@ -2,8 +2,8 @@
   "Translates diff ops (see `remuda.diff`) into datastar patch
   instructions.
 
-  This is the seam between the data model and the DOM model, and it is the part
-  2 predicted would be wrong. The diff engine says \"path
+  This is the seam between the data model and the DOM model, and the part most
+  likely to be wrong. The diff engine says \"path
   `[:items 2]` changed\"; datastar needs a CSS selector and a patch mode.
 
   Deliberately dependency-free: this namespace emits *descriptions* of patches

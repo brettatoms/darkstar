@@ -52,7 +52,8 @@
   ## Why the path is a parameter
 
   The dispatch path belongs to whatever mounted the route,
-  so hardcoding `/live/act` here would reintroduce exactly the drift  removed
+  so hardcoding `/live/act` here would reintroduce exactly the drift that reading
+  ids from the render removed
   for element ids. Callers pass it; adapters supply it from their own config.
 
   ## No arg schemas, deliberately

@@ -7,6 +7,14 @@ Remuda holds server-side view state and reports which *paths* changed. Darkstar
 turns that into something a browser can apply: CSS selectors, Datastar patch
 modes, and the client-side expressions that call back into your handlers.
 
+## Install
+
+```clojure
+com.github.brettatoms/darkstar {:mvn/version "0.1.9"}
+```
+
+Brings in Remuda transitively.
+
 ## What it is good for
 
 State lives on the server, the browser runs no application code, and updates are
@@ -166,7 +174,7 @@ clojure -M:slice -m slice     # http://localhost:3000
 
 ## Status
 
-Working and tested, not released.
+Published and tested, but new and unproven in production.
 
 ## License
 

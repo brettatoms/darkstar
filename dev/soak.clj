@@ -175,7 +175,7 @@
     (fn [sse-gen]
       ;; http-kit is event-driven: on-open returns immediately and the connection
       ;; is held by the event loop, so there is no thread to park. That is the
-      ;; structural difference  predicted would matter.
+      ;; structural difference that was expected to matter.
       (open! sse-gen (fn [_] nil)))}))
 
 ;;; ==========================================================================

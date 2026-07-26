@@ -3,8 +3,8 @@
 
   Split out of remuda's fuzz suite when patch moved here: these specs assert that
   every op the differ can emit translates to a *shippable* DOM patch, which is a
-  claim about datastar's vocabulary rather than about the diff. 3 made
-  it a design constraint that nothing the differ emits may be unshippable."
+  claim about datastar's vocabulary rather than about the diff. It is a design
+  constraint that nothing the differ emits may be unshippable."
   (:require [clojure.string :as str]
             [clojure.test.check.properties :as prop]
             [clojure.test.check.clojure-test :refer [defspec]]
@@ -20,7 +20,7 @@
   #{:outer :inner :remove :prepend :append :before :after :replace})
 
 (defspec every-op-translates-to-a-valid-patch 1000
-  ;; 3 made this a design constraint: nothing the differ emits may be
+  ;; A design constraint: nothing the differ emits may be
   ;; unshippable. Previously asserted against a hand-written scenario list.
   (prop/for-all [[old new] g/gen-derived-change]
     (let [ops (diff/diff old new)

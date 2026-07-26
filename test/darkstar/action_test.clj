@@ -1,7 +1,7 @@
 (ns darkstar.action-test
   "Tests for the action expression builder.
 
-  The three defects  recorded are each pinned by a test that **fails against
+  Each of the three known defects is pinned by a test that **fails against
   the old query-string form**, which is the only way to know these assert anything.
   Earlier in this project a pruning test suite passed 41 assertions with the
   optimisation sabotaged, so a test that cannot fail is treated here as no test."

@@ -1,5 +1,5 @@
 (ns slice
-  "The phase 2 vertical slice : one component, bare Ring, real
+  "A vertical slice: one component, bare Ring, real
   browser, real datastar.
 
   Not part of the library. This lives under `dev/` and the `:slice` alias so the
@@ -135,7 +135,7 @@
 ;;; ==========================================================================
 ;;; This is the ONLY place that knows about datastar or a server. The engine
 ;;; hands over instructions; this turns them into SSE events. Keeping it this
-;;; small is what  asks for — swapping Jetty for http-kit should touch
+;;; small is the goal — swapping Jetty for http-kit should touch
 ;;; nothing above this line.
 
 (def ^:private mode->datastar
@@ -286,7 +286,7 @@
 
   The parking is the point: the datastar Ring adapter closes the connection when
   a sync handler returns, so a long-lived LiveView connection must block. That
-  blocking thread is what  measured and what  questions — an event-driven
+  blocking thread is what the soak test measured — an event-driven
   server would not need it."
   [request]
   (let [;; Datastar sends non-underscore signals automatically; the recovery
@@ -329,7 +329,7 @@
   because the render side builds actions with `darkstar.action` and datastar
   sends a `payload` as the request body. `d*/get-signals` extracts it.
 
-  Args need **no coercion**, which is the fix for  defect 2. This handler
+  Args need **no coercion**, since JSON carries their types. This handler
   used to do
 
       (assoc :id (parse-long (get params \"id\")))
