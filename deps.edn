@@ -66,6 +66,13 @@
                   :jvm-opts ["-Xss512k" "-XX:+UseG1GC"
                              "-XX:-OmitStackTraceInFastThrow"]}
 
+           ;; clojure -M:dev:test — resolve sibling libraries from the working tree
+           ;; instead of a released version. :deps pins a released coordinate so a
+           ;; published artifact is usable, but that version cannot exist yet for an
+           ;; unpublished sibling, and it moves with every upstream commit. CI uses
+           ;; this alias for the same reason.
+           :dev {:override-deps {com.github.brettatoms/remuda {:local/root "../remuda"}}}
+
            ;; clojure -T:build jar | deploy
            :build {:deps {io.github.clojure/tools.build {:mvn/version "0.10.14"}
                           slipset/deps-deploy {:mvn/version "0.2.5"}}
