@@ -5,7 +5,6 @@
  ;; holding view state.
  ;;
  :deps {org.clojure/clojure {:mvn/version "1.12.5"}
-        com.github.brettatoms/remuda {:mvn/version "0.1.42"}
         dev.data-star.clojure/sdk {:mvn/version "1.0.0-RC11"}}
 
  :aliases {;; clojure -M:test
@@ -71,8 +70,6 @@
            ;; published artifact is usable, but that version cannot exist yet for an
            ;; unpublished sibling, and it moves with every upstream commit. CI uses
            ;; this alias for the same reason.
-           :dev {:override-deps {com.github.brettatoms/remuda {:local/root "../remuda"}}}
-
            ;; clojure -T:build jar | deploy
            :build {:deps {io.github.clojure/tools.build {:mvn/version "0.10.14"}
                           slipset/deps-deploy {:mvn/version "0.2.5"}}
