@@ -1,8 +1,17 @@
 {:paths ["src"]
- ;; Darkstar is the datastar half. It exists so `remuda` can stay free of the DOM:
- ;; everything here knows about CSS selectors, patch modes, `@post(...)`
- ;; expressions and SSE framing, and none of that belongs in a library whose job is
- ;; holding view state.
+ ;; Darkstar: server-held UI state over Datastar.
+ ;;
+ ;; A set of independent conveniences rather than a framework. `action` builds
+ ;; `@post(...)` expressions, `watch` + `live` track which fragments depend on what and
+ ;; patch only those, `diagnose` catches the mistakes `watch` makes silent, `pubsub`
+ ;; coalesces invalidation hints, `source` is a one-method read protocol. Each is usable
+ ;; without the others, and an application can push patches by hand and use none of
+ ;; them.
+ ;;
+ ;; Merged from a former two-artifact split (remuda + darkstar). The split's premise was
+ ;; that the state engine could stay free of the DOM and be reused elsewhere; after the
+ ;; view-and-diff engine was deleted, what remained was ~500 lines with no code coupling
+ ;; to justify separate CI, versioning and release cycles.
  ;;
  :deps {org.clojure/clojure {:mvn/version "1.12.5"}
         dev.data-star.clojure/sdk {:mvn/version "1.0.0-RC11"}}
@@ -65,7 +74,8 @@
                   :jvm-opts ["-Xss512k" "-XX:+UseG1GC"
                              "-XX:-OmitStackTraceInFastThrow"]}
 
-           ;; clojure -M:dev:test — resolve sibling libraries from the working tree
+           ;; clojure -M:dev:test — kept for symmetry with dependents; there are no
+           ;; sibling libraries to override any more.
            ;; instead of a released version. :deps pins a released coordinate so a
            ;; published artifact is usable, but that version cannot exist yet for an
            ;; unpublished sibling, and it moves with every upstream commit. CI uses
