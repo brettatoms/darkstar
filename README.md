@@ -1,13 +1,43 @@
 # Darkstar
 
-Server-held UI state over [Datastar](https://data-star.dev), for Clojure.
+Server-held UI state for Clojure, built on Datastar.
 
-State lives on the server. The browser runs no application code. When state changes the
-server pushes HTML fragments down a persistent connection and Datastar applies them.
+[Datastar](https://data-star.dev) gives the browser a hypermedia runtime: declarative
+attributes for events, bindings and reactive signals, and a live connection over which the
+server can patch elements, patch those signals, run scripts or redirect. You write markup
+and server handlers instead of a client application.
 
-Darkstar is **a set of independent conveniences, not a framework.** Each namespace is
-useful on its own, you can push patches by hand and use none of them, and the
-hand-written and managed styles mix inside a single component.
+Darkstar adds the piece Datastar leaves to you — deciding *what* to send and *where*. Your
+domain state lives on the server, and a fragment declares which parts of it it reads:
+
+```clojure
+(defn counter [_]
+  (fragment "count"
+    (fn [] [:span {:id "count"} (watch [:clicks] #(deref clicks))])))
+```
+
+That fragment re-renders whenever anything publishes `[:clicks]`. You never name a CSS
+selector, never write a patch, and never track which parts of which page are showing that
+number.
+
+## Is this for you?
+
+It suits applications where **the server learns things first** and the browser needs to
+find out: dashboards, queue monitors, build status, log tails, live prices, admin panels,
+chat, presence, collaborative lists. Also ordinary CRUD that wants live validation,
+dependent selects, inline editing or typeahead without a client-side data layer.
+
+There is no JSON API to design for your own UI, no duplicated validation, and no build
+step. Client-side state doesn't disappear — Datastar signals hold it, and that is the
+right home for things like a dropdown's open/closed — but your domain data has one copy.
+
+It is a poor fit for:
+
+- **Offline or unreliable networks.** No connection means no application.
+- **Sub-frame interaction.** Drag-and-drop, canvas drawing, games. Datastar signals can
+  hold local UI state, but that boundary needs deliberate design.
+- **State the browser already owns.** A half-typed input belongs in the DOM. Mirror it
+  server-side and you will echo a stale value back into the field someone is typing in.
 
 ## Install
 
@@ -15,13 +45,16 @@ hand-written and managed styles mix inside a single component.
 com.github.brettatoms/darkstar {:mvn/version "0.1.17"}
 ```
 
-The patch number is `git rev-list --count HEAD` at release time, so it moves with every
-commit. Check the [Clojars page](https://clojars.org/com.github.brettatoms/darkstar) for
-the current release rather than trusting this line.
+The patch number is the commit count at release time, so it moves often — check
+[Clojars](https://clojars.org/com.github.brettatoms/darkstar) for the current version.
 
-## Start with no library at all
+You also need a Datastar SSE adapter for your server: `dev.data-star.clojure/ring` or
+`dev.data-star.clojure/http-kit`.
 
-This is the baseline everything else should be measured against:
+## Start with plain Datastar
+
+Darkstar is a set of conveniences over Datastar, so it helps to see what it is a
+convenience *for*. Here is a counter with no Darkstar at all:
 
 ```clojure
 (defn push-count! [sse-gen n]
@@ -29,63 +62,127 @@ This is the baseline everything else should be measured against:
                       {d*/selector "#count" d*/patch-mode d*/pm-outer}))
 ```
 
-Three things to get right per call site — the selector, the patch mode, and HTML that
-agrees with what the page rendered — and one obligation: call it from wherever the data
-changed. For an app with a handful of update paths, a small helper around that is a
-perfectly good answer, and it has a real advantage: **it fails loudly.** A wrong
-selector prints `PatchElementsNoTargetsFound` in the browser console.
+Three things to get right at each call site — the selector, the patch mode, and HTML that
+matches what the page rendered — plus one obligation: call it from everywhere the data
+changes.
 
-## `watch`: declare a dependency once
+For a handful of update paths this is a fine way to build, and it has a real advantage
+over anything cleverer: **when it breaks, it says so.** A selector matching nothing prints
+`PatchElementsNoTargetsFound` in the browser console.
 
-The alternative is to say what a fragment *reads* and let the library decide when to
-re-render it:
+Reach for Darkstar when that stops scaling.
+
+## Where it stops scaling
+
+Add a "3 left" badge to a todo list. Now two places on the page show the same data, so
+every mutation needs two pushes:
 
 ```clojure
-(require '[darkstar.watch :refer [fragment watch]])
-
-(defn counter [_]
-  (fragment "count"
-    (fn [] [:span {:id "count"} (watch [:clicks] #(deref clicks))])))
+(defn complete! [id]
+  (swap! todos assoc-in [id :done] true)
+  (push-list!)       ; and don't forget
+  (push-badge!))     ; this one
 ```
 
-A writer now publishes a name — `[:clicks]` — with no selector, no patch mode and no
-HTML. Nothing has to remember which places on screen show that data.
+Add a third place and every mutation site needs a third call. Forget one and the screen is
+quietly wrong — no error, just a stale number.
 
-That matters as an app grows. A todo list with a "3 left" badge reads the same data in
-two fragments; one publish updates both, and adding a third place changes nothing. The
-manual version needs a third push call at every mutation site, and a forgotten one is a
-silently stale screen.
+With `watch` you say what each part of the page *reads*:
 
-### Where it earns its keep
+```clojure
+(defn badge []
+  (fragment "left"
+    (fn [] [:span {:id "left"}
+            (count (remove :done (watch [:todos] #(deref todos)))) " left"])))
 
-| your app | verdict |
-|---|---|
-| one thing changes, one place updates | a push helper is simpler; `watch` adds concepts for nothing |
-| one thing changes, several places update | `watch` starts paying — publish a name, not a list of targets |
-| different viewers see different subsets | `watch` is decisive |
+(defn todo-list []
+  (fragment "list"
+    (fn [] [:ul {:id "list"} (mapv item (watch [:todos] #(deref todos)))])))
+```
 
-The third row is the real case. Viewers pick a server and see its live metrics:
+and completing a todo publishes one name:
+
+```clojure
+(defn complete! [id]
+  (swap! todos assoc-in [id :done] true)
+  (publish! [:todos]))
+```
+
+Both fragments update. A fourth place showing the same data needs no change at all.
+
+### Different viewers, different pages
+
+This is where it stops being a convenience and becomes the reason to use it. Say each
+viewer picks a server and watches its metrics:
 
 ```clojure
 (defn app [{:keys [conn-id]}]
   (fragment "app"
     (fn []
-      (let [sel (watch [:selected conn-id] #(get @selected conn-id))]
-        [:div {:id "app"} (when sel (detail sel))]))))
+      (let [chosen (watch [:selected conn-id] #(get @selections conn-id))]
+        [:div {:id "app"} (when chosen (metrics-panel chosen))]))))
 ```
 
-Alice subscribes to `[:metrics "a"]`, Bob to `[:metrics "b"]` — derived from what each
-render actually read, not declared anywhere. Publishing `[:metrics "a"]` reaches Alice
-and does **no work at all** for Bob. The manual equivalent means tracking
-per-connection "what is on screen" yourself and consulting it in every push function.
+Alice picks server `a`, Bob picks `b`. Their subscriptions come out of what each render
+actually read:
 
-### The trade
+```
+alice -> [:metrics "a"], [:selected "conn-1"]
+bob   -> [:metrics "b"], [:selected "conn-2"]
+```
 
-**Manual pushes fail loudly. `watch` fails silently.** A `watch` mistake produces
-correct-looking output that never updates again.
+Publish `[:metrics "a"]` and Alice's panel updates. Bob's connection does no work at all —
+not "renders and discards", but never hears about it.
 
-Every bug found building two applications on `watch` was silent — wrong or frozen
-output, never an exception. `darkstar.diagnose` exists because of that:
+By hand, that means tracking per connection which parts of the page are currently open and
+consulting it in every push function. Here it falls out of the render.
+
+## How this fails
+
+Plain Datastar fails loudly: a selector matching nothing logs
+`PatchElementsNoTargetsFound`. Declaring dependencies instead of naming targets trades
+that for a different failure — a page that looks right and then stops updating. So most
+of the ways to get it wrong throw immediately.
+
+**Throws, at the render that caused it:**
+
+- an element whose `:id` does not match its fragment id, or has none — the patch target
+  would miss
+- two fragments sharing an id — one element would be lost from the tree entirely
+- an unrealised lazy sequence — it escapes the recording, so `watch` calls inside it are
+  never seen (use `mapv`, not `for`)
+- **a fragment that reads no topic** — nothing can ever update it, so it renders once and
+  freezes. This is the commonest mistake: passing a value into a fragment instead of
+  reading it there.
+
+That last one is worth seeing, because the broken version looks completely reasonable:
+
+```clojure
+(defn job-row [job]                                    ; the job arrives as a value
+  (fragment (str "job-" (:id job))
+    (fn [] [:tr {:id (str "job-" (:id job))} (:progress job)])))
+```
+
+Publishing `[:job 7]` finds no fragment that read it, so the row never updates. The fix is
+for the child to read rather than receive:
+
+```clojure
+(defn job-row [id]
+  (fragment (str "job-" id)
+    (fn [] [:tr {:id (str "job-" id)}
+            (:progress (watch [:job id] #(get @jobs id)))])))
+```
+
+A patchable-but-never-invalidated fragment is legitimate — a static heading, a form whose
+input owns its own value. Darkstar cannot tell that from a forgotten `watch`, so say which
+you mean:
+
+```clojure
+(fragment "composer" {:static? true}
+  (fn [] [:form {:id "composer"} …]))
+```
+
+**Still silent, and checked by `darkstar.diagnose` rather than thrown:**
 
 ```clojure
 (darkstar.diagnose/check-component my-app {:conn-id "c1"})
@@ -95,25 +192,90 @@ output, never an exception. `darkstar.diagnose` exists because of that:
 ;               be pruned. Compute it once at write time and cache it."}]
 ```
 
-- **`:unstable-reader`** — a reader that rebuilds its collection each call, so pruning
-  never fires. Correct on screen, just re-rendered on every hint.
-- **`:silent-fragment`** — a fragment handed its data as an argument rather than reading
-  it through `watch`. It subscribes to nothing and freezes after the first render.
-- **`:orphan-topic`** — a topic watched but never published. A name invented at the read
-  site has no counterpart at the publish site to disagree with.
+- **`:unstable-reader`** — your reader rebuilds its collection on every call, so Darkstar
+  can never tell nothing changed. The page stays correct but re-renders constantly.
+- **`:orphan-topic`** — a topic is watched but never published. Usually a typo: watching
+  `[:members id]` while the writer publishes `[:channel id]`. Necessarily a heuristic,
+  since a topic may simply not have been published yet.
 
-## Mixing styles
+Both are reported rather than thrown because neither is certainly wrong.
 
-Markup wrapped in `fragment` is managed; plain hiccup beside it is yours to push:
+**And one that nothing catches.** A reader closing over a snapshot instead of re-reading:
 
 ```clojure
-(fragment "app"
-  (fn [] [:div {:id "app"}
-          (fragment "a" (fn [] [:span {:id "a"} (watch [:a] #(:a @data))]))  ; managed
-          [:span {:id "b"} (:b @data)]]))                                     ; you push
+(let [snap @data]
+  (fragment "x" (fn [] [:div {:id "x"} (watch [:n] #(:n snap))])))   ; frozen
 ```
 
-The library only knows what `fragment` wraps and only subscribes to what `watch` reads.
+This subscribes correctly and returns a stable value, so pruning suppresses the re-render
+— which is indistinguishable, from the engine's side, from a correct component whose data
+genuinely did not change. Read inside the reader, not outside it.
+
+## Putting it together
+
+A complete server. `darkstar.sse` handles the connection lifecycle; you supply the
+component and where to put it.
+
+```clojure
+(require '[darkstar.action :as action]
+         '[darkstar.live :as live]
+         '[darkstar.sse :as sse]
+         '[darkstar.watch :refer [fragment watch]]
+         '[dev.onionpancakes.chassis.core :as chassis]
+         '[starfederation.datastar.clojure.adapter.ring :as d*ring])
+
+(def clicks (atom 0))
+
+(defn counter [_]
+  (fragment "app"
+    (fn [] [:div {:id "app"}
+            [:span (watch [:clicks] #(deref clicks))]
+            [:button {:data-on:click (action/post "/click")} "+1"]])))
+
+(def engine
+  (live/engine {:components {:counter #'counter}
+                :render-fn chassis/html}))
+
+;; topic -> the connections watching it
+(defonce subscriptions (atom {}))
+
+(defn- subscribe! [id topics]
+  (swap! subscriptions
+         (fn [m] (reduce (fn [m t] (update m t (fnil conj #{}) id)) m topics))))
+
+(defn publish! [topic]
+  (doseq [id (get @subscriptions topic)]
+    (live/refresh! engine id topic)))
+
+(defn live-route [request]
+  (let [{:keys [on-open on-close]}
+        (sse/handlers {:engine engine
+                       :component :counter
+                       :root "#app"
+                       :subscribe! subscribe!})]
+    (d*ring/->sse-response request
+                           {d*ring/on-open on-open
+                            d*ring/on-close on-close})))
+
+(defn click-route [_request]
+  (swap! clicks inc)
+  (publish! [:clicks])
+  {:status 204})
+```
+
+The page needs a mount point and a connection:
+
+```clojure
+[:div {:id "app"} "connecting…"]
+[:div {:data-init "@get('/live', {requestCancellation: 'cleanup'})"}]
+```
+
+`requestCancellation: 'cleanup'` matters. Without it, navigating between pages leaves the
+old connection open and one tab can accumulate several.
+
+That `subscribe!` is deliberately the simplest thing that works. For subscriptions that
+shrink as well as grow, and for hint coalescing, see `darkstar.pubsub` and the example
+applications.
 
 ## Actions
 
@@ -121,60 +283,83 @@ The library only knows what `fragment` wraps and only subscribes to what `watch`
 (require '[darkstar.action :as action])
 
 [:button {:data-on:click (action/post "/live/act" :remove {:id 42})} "delete"]
-;; renders:
 ;; @post('/live/act', {payload: {"event":"remove","id":42,"liveId":$liveId}})
 ```
 
-Worth using even if you use nothing else here. Args travel as a JSON payload, so types
-survive the round trip: `42` arrives as a number and `"42"` as a string.
+Arguments travel as JSON, so types survive: `42` arrives as a number, `"42"` as a string.
+`action/get`, `put`, `patch` and `delete` work the same way.
 
-Note the `{payload: {...}}` wrapper. The second argument to `@post` is an *options* map,
-so passing a bare `{:id 42}` is silently ignored and Datastar sends its signal set
-instead — an empty body, no error, and a handler that sees nothing. `action/get`, `put`,
-`patch` and `delete` are also available.
+Note the `{payload: {...}}` wrapper. Datastar's second argument is an *options* map, so a
+bare `{:id 42}` is ignored and Datastar sends its signals instead — an empty body, no
+error, and a handler that receives nothing. `action/post` gets this right for you.
 
-## What it is good for
+On the receiving side, `sse/read-payload` handles both shapes a payload can arrive in:
+already parsed by middleware, or as an unread request body.
 
-Good fits:
+## Two rules for writing components
 
-- **Anything the server knows first.** Dashboards, queue monitors, build status, log
-  tails, live prices, admin panels. The server pushes; there is nothing to poll.
-- **Multi-user views of shared state.** Chat, comment threads, collaborative lists,
-  presence.
-- **CRUD with interactive polish.** Live validation, dependent selects, inline editing,
-  filtered tables, typeahead — without a client-side data layer or duplicated
-  validation.
-- **Apps whose API exists only for their own UI.** If nothing else consumes those
-  endpoints, this removes them.
-- **Internal tools and small teams.** One language, one place state lives, no client
-  build step.
+**Use `mapv`, not `for`.** A lazy sequence is realised after the recording has finished,
+so its `watch` calls are never seen and those fragments never update. The first render
+looks perfect. Darkstar throws when it detects an unrealised sequence, but writing it
+correctly beats relying on the check.
 
-Poor fits:
+**Return stable values from readers.** Darkstar decides whether to re-render by comparing
+what a reader returned last time against what it returns now, `identical?` first. A reader
+that rebuilds its result each call always looks changed:
 
-- **Offline or flaky networks.** No connection means no application.
-- **Sub-frame interaction.** Drag-and-drop, canvas drawing, games. Datastar signals can
-  hold local UI state, but that boundary needs deliberate design.
-- **State the client already owns.** A half-typed input belongs in the DOM. Mirroring it
-  server-side means echoing a stale value back into the field being typed in.
+```clojure
+(defn all-jobs [] (vec (sort-by :id (vals @jobs))))   ; re-renders always
+(defn all-jobs [] (:sorted @cache))                   ; prunes correctly
+```
 
-## Connections
+Compute derived collections once when the data changes and hand out the cached value.
+`darkstar.diagnose` reports the first form.
 
-Every viewer holds one open SSE connection for as long as their page is open, so a
-server runs thousands of parked connections rather than many short requests. What
-matters is the cost of a *parked* connection, not requests per second.
+## Namespaces
 
-Darkstar names no server — the transport is a function you supply — but the choice is
-consequential. Measured on one laptop (macOS, JDK 26, 8 cores, 2 GB heap), **idle**
-connections, marginal cost after subtracting a zero-connection baseline:
+Each stands alone; use what you need.
 
-| transport | connections | heap | per connection | bounded by |
-|---|---|---|---|---|
-| http-kit | 44,836 | 167 MB | **3.6 KB** | the load generator's kernel buffers |
-| Jetty + virtual threads | 45,497 | 892 MB | **19.8 KB** | the load generator's kernel buffers |
-| Jetty + platform threads | **4,060** | — | — | `pthread_create` failure |
+| namespace | for |
+|---|---|
+| `darkstar.action` | `@post(...)` expressions that call your handlers |
+| `darkstar.watch` | `fragment` and `watch` — declaring what a fragment reads |
+| `darkstar.live` | connections, and turning a published topic into patches |
+| `darkstar.sse` | the connection lifecycle and patches onto a Datastar stream |
+| `darkstar.diagnose` | development checks for the three quiet mistakes |
+| `darkstar.pubsub` | invalidation hints, with coalescing |
+| `darkstar.source` | a one-method read protocol, if you want reads behind an interface |
+
+`fragment` is opt-in per element, so a component can hold managed fragments alongside
+plain hiccup you push yourself:
+
+```clojure
+(fragment "app"
+  (fn [] [:div {:id "app"}
+          (fragment "a" (fn [] [:span {:id "a"} (watch [:a] #(:a @data))]))  ; managed
+          [:span {:id "b"} (:b @data)]]))                                     ; yours
+```
+
+## Choosing a server
+
+Every viewer holds one connection open for as long as their page is live, so what matters
+is the cost of an idle connection rather than requests per second. Darkstar names no
+server, but the choice is consequential.
+
+On one laptop (macOS, JDK 26, 8 cores, 2 GB heap), idle connections, marginal cost above a
+zero-connection baseline:
+
+| transport | connections | heap | per connection |
+|---|---|---|---|
+| http-kit | 44,836 | 167 MB | **3.6 KB** |
+| Jetty + virtual threads | 45,497 | 892 MB | **19.8 KB** |
+| Jetty + platform threads | **fails at 4,060** | — | — |
 
 Platform threads park an OS thread per connection and hit the kernel's thread limit.
-Virtual threads lift Jetty past that and reach http-kit's count, at ~5.5× the memory.
+Virtual threads clear that and match http-kit's count at roughly 5.5× the memory.
+
+Both successful runs were limited by the load generator rather than the server, so the real
+ceiling is higher and unmeasured. Heap was never the constraint for http-kit: 167 MB of
+2 GB at 44,836 connections.
 
 ### http-kit
 
@@ -183,14 +368,14 @@ Virtual threads lift Jetty past that and reach http-kit's count, at ~5.5× the m
                         :backlog 65536 :max-connections 200000})
 ```
 
-Event-driven, so `on-open` returns immediately and there is no per-connection thread to
-cap. Needs the http-kit Datastar adapter rather than the Ring one.
+Event-driven, so `on-open` returns immediately and there is no per-connection thread.
+Needs `dev.data-star.clojure/http-kit`.
 
-`:backlog` is not tuning. The default accept queue overflows under a parallel load
-generator and the failures arrive on the *client* as `ConnectException: Operation timed
-out`, which reads exactly like a server ceiling.
+Raise `:backlog`. The default accept queue overflows under load and the failures surface
+on the *client* as `ConnectException: Operation timed out`, which looks exactly like a
+server limit.
 
-### Jetty with virtual threads
+### Jetty
 
 ```clojure
 (jetty/run-jetty handler
@@ -201,101 +386,55 @@ out`, which reads exactly like a server ceiling.
                   (.setMaxThreads 100000))})
 ```
 
-`:async? true` and `:async-timeout 0` are required: a parked SSE handler must not occupy
-a request worker or be timed out.
+`:async? true` and `:async-timeout 0` are required — an open SSE handler must not hold a
+request worker or be timed out. Use `setMaxThreads`; `setMaxConcurrentTasks` existed in
+older Jetty and throws on 12.
 
-`setMaxThreads`, not `setMaxConcurrentTasks` — the latter existed in earlier Jetty and
-throws on 12.0.21.
+### Under load
 
-### Fan-out, which is usually the number that matters
+Idle connections are the easy case; pushing to them is the real workload. On a dashboard
+whose fragments update at rates spanning 100×, with one writer:
 
-Idle connections are the easy half. Under active fan-out — one writer, N readers, on a
-dashboard whose fragments update at rates spanning 100× — counting bytes received *per
-connection*, so a connection that opened but receives nothing cannot be mistaken for a
-working one:
+| connections | patches delivered in 60s | server CPU (of 800%) |
+|---|---|---|
+| 500 | 478,000 | 48% |
+| 1,000 | 837,952 | 32% |
+| 2,000 | 978,430 | 26% |
 
-| connections | events delivered in 60s | server CPU (of 800%) | any silent? |
-|---|---|---|---|
-| 500 | 478,000 | 48% | no |
-| 1,000 | 837,952 | 32% | no |
-| 2,000 | 978,430 patches | ~26% | no |
+Every connection kept receiving throughout. Two things were needed: fan out on a
+work-stealing pool rather than the publishing thread, and keep the subscription index per
+connection. A single map of `topic -> #{connection}` rebuilt on every refresh becomes the
+bottleneck long before rendering does.
 
-Two things were needed, and the second mattered more:
+One caveat: at 2,000 connections, *opening* them all took 305 seconds, because each mount
+competes with fan-out already in flight. Steady-state throughput was unaffected, but a mass
+reconnect after a deploy will be slow.
 
-1. Fan-out on a work-stealing pool rather than the publishing thread.
-2. A **per-connection** subscription index. A single atom holding `topic -> #{conn-id}`
-   rebuilt on every refresh was O(topics) work per connection serialized by CAS retries
-   — adding threads to that made it *worse*. Most of the CPU drop from 102% to ~30% is
-   this, not the pool.
-
-At 2,000 connections, *opening* them all took 305 seconds, because each mount competes
-with fan-out already in flight. Steady-state throughput was unaffected, but a thundering
-herd of reconnects after a deploy would be slow.
-
-### What these numbers do not say
-
-Heap was never the binding constraint for http-kit: 167 MB of 2 GB at 44,836
-connections. Both idle runs stopped because the *load generator* ran out of kernel
-socket buffers, so those ceilings are unknown.
-
-Dividing 2 GB by 3.6 KB suggests ~570k connections of view state, but that excludes
-socket buffers, TLS state and per-socket kernel memory, and assumes GC behaves at 570k
-live objects as at 45k. That is arithmetic, not a measurement.
-
-`dev/soak.clj` and `bin/soak.sh` hold the harness. Its docstring leads with the harness
-errors that produced earlier wrong numbers, because every plateau on a single host so
-far turned out to be an OS or harness limit rather than a server limit.
-
-## Namespaces
-
-- `darkstar.action` — `@post(...)` client expressions that invoke your handlers.
-- `darkstar.watch` — `fragment` and `watch`. Records which fragments read which topics.
-  Requires nothing else.
-- `darkstar.live` — connections, and the fragments each is showing. Turns a hint into
-  the narrowest patches for one viewer.
-- `darkstar.diagnose` — development checks for the mistakes `watch` makes silent.
-- `darkstar.pubsub` — invalidation hints and coalescing. Hints carry no payload, so they
-  are safe to lose, reorder or duplicate, and many hints for one topic collapse into one
-  rebuild.
-- `darkstar.source` — a one-method read protocol, for when reads should sit behind an
-  interface.
-
-## Two things to know before using `watch`
-
-**Use `mapv`, not `for`.** A lazy sequence escapes the recording, so its `watch` calls
-are never seen and its fragments never update — while the first render looks perfect.
-This is checked and throws, but writing it correctly beats relying on the guard.
-
-**A dependency set is data, so re-derive it on every render.** A roster reading one
-topic per member depends on a different set the moment its membership changes.
-`darkstar.live/refresh!` reports `:added` and `:removed` for exactly this; subscribing
-once at mount leaves a later joiner permanently stale.
+`dev/soak.clj` and `bin/soak.sh` hold the harness if you want to measure your own setup.
 
 ## Development
 
 ```
-clojure -M:test                        # 73 tests
-clojure -M:clj-kondo --lint src test
-clojure -M:cljfmt check src test
-bin/soak.sh http-kit 2g                # concurrency
+clojure -M:test
+clojure -M:clj-kondo --lint src test dev
+clojure -M:cljfmt check src test dev
+bin/soak.sh http-kit 2g
 ```
 
-## Related
+## Examples
 
-[Zodiac Live](https://github.com/brettatoms/zodiac-live) — a
-[Zodiac](https://github.com/brettatoms/zodiac) extension, plus runnable examples: an
-encrypted chat app, a build dashboard used for the fan-out numbers above, and the same
-chat app written with no engine at all for comparison.
+[Zodiac Live](https://github.com/brettatoms/zodiac-live) is a
+[Zodiac](https://github.com/brettatoms/zodiac) extension with four runnable applications:
+an end-to-end encrypted chat app, a build dashboard, the same chat app written with no
+engine for comparison, and a minimal single-fragment server.
 
 ## Status
 
-New and unproven in production. Browser-verified and soak-tested; the API is likely to
-move.
+New and unproven in production. Browser-verified and soak-tested, but the API is likely to
+change.
 
-Merged from a former two-artifact split (`remuda` + `darkstar`). The premise was that a
-state engine could stay free of the DOM and be reused elsewhere. After the original
-view-and-diff engine was replaced by `watch`, what remained had no code coupling to
-justify separate CI, versioning and releases. **`remuda` is archived; do not use it.**
+Darkstar was previously split across two artifacts, `remuda` and `darkstar`. They are
+merged; **`remuda` is archived and should not be used.**
 
 ## License
 
