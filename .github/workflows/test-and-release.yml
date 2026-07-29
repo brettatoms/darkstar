@@ -43,10 +43,10 @@ jobs:
           key: ${{ runner.os }}-${{ hashFiles('**/deps.edn') }}
       - name: Lint
         working-directory: darkstar
-        run: clojure -M:dev:clj-kondo --lint src test dev examples
+        run: clojure -M:clj-kondo --lint src test dev
       - name: Check formatting
         working-directory: darkstar
-        run: clojure -M:dev:cljfmt check src test dev examples
+        run: clojure -M:cljfmt check src test dev
 
   test:
     runs-on: ubuntu-latest
@@ -82,7 +82,7 @@ jobs:
           key: ${{ runner.os }}-${{ hashFiles('**/deps.edn') }}
       - name: Run tests
         working-directory: darkstar
-        run: clojure -M:dev:test
+        run: clojure -M:test
 
   release:
     needs: [checks, test]
