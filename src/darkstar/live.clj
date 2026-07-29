@@ -93,12 +93,25 @@
   (if (map? component) (:render component) component))
 
 (defn connect!
-  "Registers a connection. Renders nothing — the caller decides when to mount."
+  "Registers a connection. Renders nothing — the caller decides when to mount.
+
+  `:conn-id` is added to `params`. A component keying per-connection state needs its own
+  id and cannot otherwise get it: the id is generated here, so it does not exist when the
+  caller builds `params`.
+
+  Every caller used to write it back by hand, reaching into the registry:
+
+      (let [id (connect! eng :c {:params p :send! f})]
+        (swap! (:registry eng) update id assoc-in [:params :conn-id] id))
+
+  Four sites did that, including an application doing it despite `darkstar.sse/handlers`
+  existing to do it for them. Something every caller must do immediately after a call,
+  using internals, belongs inside the call."
   [{:keys [registry]} component-name {:keys [send! params]}]
   (let [id (str "w" (subs (str (random-uuid)) 0 8))]
     (swap! registry assoc id {:id id
                               :component-name component-name
-                              :params (or params {})
+                              :params (assoc (or params {}) :conn-id id)
                               :send! send!
                               :fragments {}})
     id))

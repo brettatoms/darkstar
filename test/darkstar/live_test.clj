@@ -278,9 +278,8 @@
         sent (atom [])
         a (we/connect! eng :c {:params {:user "amy"} :send! #(swap! sent into %)})
         b (we/connect! eng :c {:params {:user "nick"} :send! #(swap! sent into %)})]
-    ;; A server puts the connection id in params; mirror that.
-    (swap! (:registry eng) update a assoc-in [:params :conn-id] a)
-    (swap! (:registry eng) update b assoc-in [:params :conn-id] b)
+    ;; `connect!` puts each connection's id in its own params, which is what makes the
+    ;; per-connection `[:pages conn-id]` topic below differ between a and b.
     (we/mount! eng a)
     (we/mount! eng b)
 

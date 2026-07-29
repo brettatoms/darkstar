@@ -131,7 +131,7 @@
 
   Optional:
 
-  - `:params`       params for the component. `:conn-id` is added automatically.
+  - `:params`       params for the component. `connect!` adds `:conn-id`.
   - `:subscribe!`   `(fn [id topics])`, called with the topics the render read
   - `:unsubscribe!` `(fn [id])`, called on close
   - `:on-mount`     `(fn [id])`, after the initial push. Publish arrival hints here —
@@ -159,10 +159,8 @@
        (let [id (live/connect! engine component {:send! (sender sse-gen)
                                                  :params (or params {})})]
          (deliver id* id)
-         ;; `:conn-id` cannot be passed to `connect!` — it IS the id `connect!` returns.
-         ;; Written back before the first render, because a component keying
-         ;; per-connection state needs it.
-         (swap! (:registry engine) update id assoc-in [:params :conn-id] id)
+         ;; `:conn-id` is added by `connect!` itself — it IS the id `connect!` returns, so
+         ;; it cannot be passed in.
          (let [{:keys [html topics]} (live/mount! engine id)]
            (when subscribe! (subscribe! id topics))
            (d*/patch-elements! sse-gen html
