@@ -12,8 +12,12 @@ hand-written and managed styles mix inside a single component.
 ## Install
 
 ```clojure
-com.github.brettatoms/darkstar {:mvn/version "0.1.15"}
+com.github.brettatoms/darkstar {:mvn/version "0.1.17"}
 ```
+
+The patch number is `git rev-list --count HEAD` at release time, so it moves with every
+commit. Check the [Clojars page](https://clojars.org/com.github.brettatoms/darkstar) for
+the current release rather than trusting this line.
 
 ## Start with no library at all
 
