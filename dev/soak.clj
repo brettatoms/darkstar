@@ -45,28 +45,45 @@
 
          clojure -M:soak -m soak drive-once 15000 127.0.0.2
 
-  Also raise the server's descriptor limit — macOS defaults
-  `launchctl limit maxfiles` to 256, which caps a JVM around ~4,900 fds regardless
-  of `ulimit -n` in the shell.
+     **Verified.** Two drivers bound to 127.0.0.1 and 127.0.0.2 held 30,000
+     connections with `errors=0` from both — nearly double the 16,315 single-address
+     ceiling, and not itself a ceiling, since neither driver failed a single connect.
+     Source IPs do get their own ephemeral range.
+
+  Check the server's descriptor limit, but do not assume `launchctl limit maxfiles`
+  is it. An earlier version of this docstring claimed the macOS default of 256 caps a
+  JVM around ~4,900 fds regardless of the shell's `ulimit -n`. Retested directly on a
+  host reporting `maxfiles 256` with `ulimit -n 1048576`: a JVM opened 20,000 file
+  descriptors without error. The shell limit is what binds, and the ~4,900 plateau
+  once attributed to `maxfiles` was the connect-timeout failure listed above.
 
   ## What has been measured, and what has not
 
-  Measured on one laptop (macOS, JDK 26, 8 cores):
+  Measured on one laptop (macOS, JDK 26, 8 cores), three loopback source addresses,
+  2 GB heap:
 
-  | transport | outcome |
-  |---|---|
-  | http-kit | 16,315 held flat, 17 threads, **3.4 KB/conn** |
-  | jetty + virtual threads | comparable counts, **22.6 KB/conn**, 21 threads |
-  | jetty + platform threads | **fails at 4,060** — `kern.num_taskthreads`, thousands of `pthread_create` failures |
+  | transport | connections | heap | KB/conn | bound by |
+  |---|---|---|---|---|
+  | http-kit | 44,836 | 167 MB | **3.6** | driver: kernel socket buffers |
+  | jetty + virtual threads | 45,497 | 892 MB | **19.8** | driver: kernel socket buffers |
+  | jetty + platform threads | **4,060** | — | — | `kern.num_taskthreads`, thousands of `pthread_create` failures |
 
-  **Heap was never the binding constraint.** At 16,315 connections http-kit used 65 MB
-  of a 2 GB heap — about 3%. 2 GB and 4 GB runs were therefore indistinguishable.
+  So virtual threads do lift Jetty past the platform-thread thread cap and reach the
+  same count as http-kit — at **5.5x the memory per connection**. An earlier run
+  reported 22.6 KB/conn for jetty-vt against an older Jetty API
+  (`VirtualThreadPool.setMaxConcurrentTasks`, which no longer exists in 12.0.21); 19.8
+  on the current API is close enough to treat the ratio as real rather than an artefact.
 
-  So the headline question — *how many connections fit in 2 GB?* — is **unanswered**.
-  The honest extrapolation is from KB/conn: 2 GB / 3.4 KB is roughly 600k connections
-  of *view state*, but that excludes socket buffers, TLS state and per-socket kernel
-  memory, and assumes GC behaves at 600k live objects as it does at 16k. Treat it as
-  arithmetic, not a measurement.
+  **Heap is still not the binding constraint for http-kit** — 167 MB of 2 GB at 44.8k,
+  about 8%. Both transports were stopped by the *driver* host running out of kernel
+  socket buffers (`SocketException: No buffer space available`), not by the server.
+
+  jetty-vt at 892 MB of 2 GB is within sight of a heap limit, so for that transport the
+  2 GB/4 GB question would finally be answerable. For http-kit it still is not.
+
+  Extrapolating from KB/conn — 2 GB / 3.6 KB is roughly 570k connections of view state —
+  remains arithmetic rather than measurement: it excludes socket buffers, TLS state and
+  per-socket kernel memory, and assumes GC behaves at 570k live objects as at 45k.
 
   Also: **idle connections only.** No broadcast fan-out, no diffing, no pushing — the
   workload that actually matters in production is measured separately in
@@ -101,8 +118,8 @@
             [starfederation.datastar.clojure.api :as d*]
             [starfederation.datastar.clojure.adapter.http-kit :as d*hk]
             [starfederation.datastar.clojure.adapter.ring :as d*ring]
-            [remuda.engine :as engine]
-            [remuda.render :as render])
+            [darkstar.watch :as w]
+            [darkstar.live :as engine])
   (:import [java.util.concurrent CountDownLatch Executors TimeUnit]))
 
 ;;; ==========================================================================
@@ -116,19 +133,33 @@
   (mapv (fn [i] {:id i :text (str "message number " i " with some realistic length")})
         (range 50)))
 
-(def component
-  {:mount (fn [_] {:items (with-meta rows {:live/key :id})})
-   :render (fn [{:keys [items] ::engine/keys [id]}]
-             (render/boundary
-              []
-              [:div {:id id}
-               (render/boundary [:items]
-                                [:ul {:id (str id "-items")}
-                                 (for [i items]
-                                   (render/boundary [:items (:id i)]
-                                                    [:li {:id (str id "-i-" (:id i))}
-                                                     (:text i)]))])]))
-   :on {}})
+(defonce ^{:doc "The rows every connection renders. One shared value on purpose: a
+  per-connection copy would measure the copy rather than the per-connection cost."}
+  row-source
+  (atom rows))
+
+(defn component
+  "The component under test, in the `watch` style.
+
+  One fragment per row, so the fragment count per connection matches what a real app
+  holds — the thing being measured is per-connection bookkeeping, and a single
+  fragment would understate it.
+
+  `mapv`, not `for`: a lazy seq escapes the recording binding and its fragments are
+  never recorded. The old version used `for` safely because the diff engine walked
+  the realised tree instead."
+  [{:keys [conn-id]}]
+  (w/fragment
+   (str conn-id "-root")
+   (fn []
+     (let [items (w/watch [:items] #(deref row-source))]
+       [:div {:id (str conn-id "-root")}
+        [:ul {:id (str conn-id "-items")}
+         (mapv (fn [i]
+                 (w/fragment
+                  (str conn-id "-i-" (:id i))
+                  (fn [] [:li {:id (str conn-id "-i-" (:id i))} (:text i)])))
+               items)]]))))
 
 (defonce registry (atom {}))
 (defonce latches (atom {}))
@@ -145,11 +176,14 @@
 ;;; holds the stream open.
 
 (defn- open! [sse-gen send!]
-  (let [id (engine/connect! eng :c {:send! send!
-                                    :close! #(d*/close-sse! sse-gen)})
+  (let [id (engine/connect! eng :c {:send! send!})
         latch (CountDownLatch. 1)]
+    ;; `:conn-id` is the id `connect!` returns, so it is written back before the
+    ;; first render. Ids are per connection here because the measurement is
+    ;; per-connection fragment bookkeeping.
+    (swap! registry update id assoc-in [:params :conn-id] id)
     (swap! latches assoc id latch)
-    (d*/patch-elements! sse-gen (engine/mount! eng id {})
+    (d*/patch-elements! sse-gen (:html (engine/mount! eng id))
                         {d*/selector "#root" d*/patch-mode d*/pm-outer})
     [id latch]))
 
@@ -175,7 +209,7 @@
     (fn [sse-gen]
       ;; http-kit is event-driven: on-open returns immediately and the connection
       ;; is held by the event loop, so there is no thread to park. That is the
-      ;; structural difference that was expected to matter.
+      ;; structural difference §8.1 predicted would matter.
       (open! sse-gen (fn [_] nil)))}))
 
 ;;; ==========================================================================
@@ -297,20 +331,33 @@
                 ;; 200 and is a semaphore, so a blocking SSE handler holds a permit
                 ;; for the connection's life and client #201 never gets a handler.
                 ;; That default reads as "virtual threads cap at 200" and would make
-                ;; this comparison meaningless.
+                ;; this comparison meaningless (§8).
                 "jetty-vt" (let [s (jetty/run-jetty
                                     jetty-handler
                                     {:port port :join? false
                                      :async? true :async-timeout 0
+                                     ;; Jetty 12.0.21 renamed this: `setMaxConcurrentTasks`
+                                     ;; no longer exists and the original soak's call to
+                                     ;; it now throws. `setMaxThreads` is the current
+                                     ;; knob — worth noting when comparing against the
+                                     ;; earlier 22.6 KB/conn figure, which was measured
+                                     ;; against the older API.
                                      :thread-pool
                                      (doto (org.eclipse.jetty.util.thread.VirtualThreadPool.)
-                                       (.setMaxConcurrentTasks 100000))})]
+                                       (.setMaxThreads 100000))})]
                              #(.stop s))
                 ;; Event-driven: on-open returns immediately, no thread per
                 ;; connection to cap.
+                ;; `:max-connections` and a deep `:backlog` both matter. The default
+                ;; accept backlog overflows under a parallel driver and the failures
+                ;; arrive as ConnectException "Operation timed out" on the CLIENT,
+                ;; which reads exactly like a server ceiling. Measured at 4,982 with
+                ;; 3,595 such timeouts before this was raised.
                 "http-kit" (hk/run-server http-kit-handler
                                           {:port port :thread 32
-                                           :queue-size 100000}))
+                                           :queue-size 100000
+                                           :backlog 65536
+                                           :max-connections 200000}))
         baseline (do (Thread/sleep 1500) (live-heap-mb))]
     (println (format "server=%s max-heap=%.1fGB baseline=%.1fMB threads=%d"
                      server max-heap baseline (thread-count)))
