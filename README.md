@@ -12,7 +12,7 @@ hand-written and managed styles mix inside a single component.
 ## Install
 
 ```clojure
-com.github.brettatoms/darkstar {:mvn/version "0.1.14"}
+com.github.brettatoms/darkstar {:mvn/version "0.1.15"}
 ```
 
 ## Start with no library at all
