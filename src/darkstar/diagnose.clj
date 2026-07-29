@@ -98,10 +98,16 @@
 
   A fragment with no reads is sometimes intentional — a static panel that is patchable
   but never invalidated — so this is a *report* rather than an error. Pass `:allow` to
-  narrow it to the ones that surprise you."
+  narrow it to the ones that surprise you.
+
+  Since `fragment` itself now throws on this, a recording produced by rendering a
+  component cannot contain one unless it was declared `{:static? true}` — which this
+  skips. What remains for this check is recordings assembled by hand, and `:allow` for
+  static fragments not yet annotated."
   [recording & {:keys [allow] :or {allow #{}}}]
   (vec (for [[fid frag] (:fragments recording)
              :when (and (empty? (:topics frag))
+                        (not (:static? frag))
                         (not (contains? allow fid)))]
          {:fragment fid})))
 
@@ -136,13 +142,19 @@
   been exercised, and it warns rather than throws.
 
   Pass `:known` for topics that are expected never to be published — per-connection UI
-  state whose publisher runs only on interaction, for example."
+  state whose publisher runs only on interaction, for example.
+
+  Reports `:fragments`, the ids that read the topic, because finding a typo means going
+  to the read site and the topic name alone does not say where that is."
   [recording & {:keys [known] :or {known #{}}}]
   (let [seen @published]
     (vec (for [topic (:topics recording)
                :when (and (not (contains? seen topic))
                           (not (contains? known topic)))]
-           {:topic topic}))))
+           {:topic topic
+            :fragments (vec (sort (for [[fid frag] (:fragments recording)
+                                        :when (contains? (:topics frag) topic)]
+                                    fid)))}))))
 
 ;;; ==========================================================================
 ;;; Running the checks

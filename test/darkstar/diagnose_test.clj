@@ -44,15 +44,23 @@
   ;; Bug 4, from the dashboard: `job-row` took the job map as an argument instead of
   ;; watching `[:job id]`, so a progress bar that changes ten times a second would have
   ;; been frozen at whatever the list last held.
+  ;; `fragment` now throws on this, so rendering the broken component cannot reach the
+  ;; detector. The detector still exists for recordings assembled by hand, and this
+  ;; asserts the two agree on what counts as silent.
   (let [data (atom {:name "web"})
-        bad (fn [_] (w/fragment "row" (fn [] [:li {:id "row"} (:name @data)])))
-        problems (d/check-component bad {})]
-    (is (= [:silent-fragment] (mapv :problem problems)))
-    (is (= "row" (:fragment (first problems)))))
+        bad (fn [_] (w/fragment "row" (fn [] [:li {:id "row"} (:name @data)])))]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"read no topic"
+                          (d/check-component bad {}))))
+
+  (testing "a hand-built recording is still reported"
+    (let [recording {:fragments {"row" {:topics #{}}}}]
+      (is (= [{:fragment "row"}] (d/silent-fragments recording)))))
 
   (testing "unless it is declared static"
-    (let [bad (fn [_] (w/fragment "row" (fn [] [:li {:id "row"} "static"])))]
-      (is (= [] (d/check-component bad {} :allow-silent #{"row"}))))))
+    (let [recording {:fragments {"row" {:topics #{} :static? true}}}]
+      (is (= [] (d/silent-fragments recording))))
+    (let [recording {:fragments {"row" {:topics #{}}}}]
+      (is (= [] (d/silent-fragments recording :allow #{"row"}))))))
 
 (deftest a-topic-nobody-publishes-is-reported
   ;; Bug 5, the one that cost the most time: the ported chat app watched
@@ -101,5 +109,6 @@
                                    (w/fragment "list"
                                                (fn [] [:ul {:id "list"}
                                                        (count (w/watch [:rows] #(:rows @cache)))]))
-                                   (w/fragment "title" (fn [] [:h1 {:id "title"} "Builds"]))])))]
-    (is (= [] (d/check-component good {} :allow-silent #{"title"})))))
+                                   (w/fragment "title" {:static? true}
+                                               (fn [] [:h1 {:id "title"} "Builds"]))])))]
+    (is (= [] (d/check-component good {})))))

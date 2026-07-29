@@ -316,10 +316,47 @@
 (deftest a-bare-function-component-still-works
   ;; Most components have no events. Requiring a map for all of them would be
   ;; ceremony, so the bare `(fn [params] -> tree)` form stays valid.
-  (let [eng (we/engine {:components {:c (fn [_] (w/fragment "x" (fn [] [:div {:id "x"} "hi"])))}
+  (let [eng (we/engine {:components {:c (fn [_] (w/fragment "x" {:static? true}
+                                                            (fn [] [:div {:id "x"} "hi"])))}
                         :render-fn pr-str})
         id (we/connect! eng :c {:params {} :send! (fn [_] nil)})]
     (is (= "[:div {:id \"x\"} \"hi\"]" (:html (we/mount! eng id))))))
+
+(deftest a-child-given-its-data-throws-at-mount
+  ;; The dashboard bug, end to end: `job-row` took the job map from the list instead of
+  ;; watching `[:job id]`, so each row was a patch target with no dependency. It rendered
+  ;; correctly and then froze. Caught at mount rather than by a stale screen.
+  (let [rows (atom [{:id 1 :progress 10}])
+        bad-row (fn [job]
+                  (w/fragment (str "job-" (:id job))
+                              (fn [] [:tr {:id (str "job-" (:id job))} (:progress job)])))
+        bad (fn [_] (w/fragment "jobs"
+                                (fn [] [:tbody {:id "jobs"}
+                                        (mapv bad-row (w/watch [:jobs] #(deref rows)))])))
+        eng (we/engine {:components {:c bad} :render-fn pr-str})
+        id (we/connect! eng :c {:params {} :send! (fn [_] nil)})]
+    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"\"job-1\" read no topic"
+                          (we/mount! eng id))))
+
+  (testing "and the version that reads its own row mounts and patches"
+    (let [jobs (atom {1 {:id 1 :progress 10}})
+          rows (atom [{:id 1}])
+          good-row (fn [jid]
+                     (w/fragment (str "job-" jid)
+                                 (fn [] [:tr {:id (str "job-" jid)}
+                                         (:progress (w/watch [:job jid]
+                                                             #(get @jobs jid)))])))
+          good (fn [_] (w/fragment "jobs"
+                                   (fn [] [:tbody {:id "jobs"}
+                                           (mapv (comp good-row :id)
+                                                 (w/watch [:jobs] #(deref rows)))])))
+          eng (we/engine {:components {:c good} :render-fn pr-str})
+          id (we/connect! eng :c {:params {} :send! (fn [_] nil)})]
+      (is (contains? (set (:topics (we/mount! eng id))) [:job 1]))
+      (swap! jobs assoc-in [1 :progress] 99)
+      (let [{:keys [patches]} (we/refresh! eng id [:job 1])]
+        (is (= 1 (count patches)))
+        (is (= "[:tr {:id \"job-1\"} 99]" (:html (first patches))))))))
 
 (deftest refreshing-an-unknown-connection-is-nil-not-an-error
   ;; A hint can race a disconnect: the id set is snapshotted, and the connection can

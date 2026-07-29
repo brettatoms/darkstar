@@ -80,12 +80,42 @@
 
 (deftest fragments-with-no-watch-record-an-empty-topic-set
   ;; A purely static fragment is legitimate — it is patchable but never invalidated.
-  ;; It must not accidentally inherit topics it did not read.
+  ;; It must not accidentally inherit topics it did not read. Intent has to be declared,
+  ;; because the engine cannot tell this from a forgotten `watch`.
   (let [r (w/render-recording
-           (fn [] (w/fragment "static"
+           (fn [] (w/fragment "static" {:static? true}
                               (fn [] [:div {:id "static"} "nothing dynamic here"]))))]
     (is (= #{} (:topics (get (:fragments r) "static"))))
+    (is (true? (:static? (get (:fragments r) "static"))))
     (is (= [] (w/fragments-for-topic (:fragments r) [:presence "anyone"])))))
+
+(deftest a-fragment-that-reads-nothing-throws-unless-declared-static
+  ;; The dashboard bug: `job-row` took the job map as an argument, so the row was a
+  ;; patch target that had declared no dependency. It rendered once and froze.
+  (is (thrown-with-msg?
+       clojure.lang.ExceptionInfo #"read no topic, so nothing can ever update it"
+       (w/render-recording
+        (fn [] (w/fragment "row" (fn [] [:li {:id "row"} "passed in"]))))))
+  (testing "the message names the escape hatch, since a static fragment is legitimate"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo #"\{:static\? true\}"
+         (w/render-recording
+          (fn [] (w/fragment "row" (fn [] [:li {:id "row"} "passed in"]))))))))
+
+(deftest a-parent-whose-child-reads-is-not-silent
+  ;; Topics bubble up, so a wrapper that reads nothing itself is still reachable through
+  ;; its child and must not need annotating. This is the case a structural heuristic got
+  ;; wrong, so it is pinned.
+  (let [presence (atom {"alice" true})
+        r (w/render-recording
+           (fn [] (w/fragment "outer"
+                              (fn [] [:div {:id "outer"}
+                                      (w/fragment "inner"
+                                                  (fn [] [:span {:id "inner"}
+                                                          (w/watch [:presence "alice"]
+                                                                   #(get @presence "alice"))]))]))))]
+    (is (= #{[:presence "alice"]} (:topics (get (:fragments r) "outer"))))
+    (is (false? (:static? (get (:fragments r) "outer"))))))
 
 ;;; ==========================================================================
 ;;; The fragment id must match the element id
@@ -158,10 +188,13 @@
   ;; (`render/validate` reports `:duplicate-id`) and it silently broke when fragments
   ;; accumulated through a plain `merge`. One row was dropped from the tree with no
   ;; error — worse than a mismatched id, which at least leaves the element on the page.
+  ;; `:static?` keeps the subject of the test the collision: without it these bodies
+  ;; read nothing, and `assert-subscribed!` would throw first for a different reason.
   (is (thrown-with-msg?
        clojure.lang.ExceptionInfo #"Duplicate fragment id \"dup\""
        (w/render-recording
-        (fn [] [:ul (mapv (fn [u] (w/fragment "dup" (fn [] [:li {:id "dup"} u])))
+        (fn [] [:ul (mapv (fn [u] (w/fragment "dup" {:static? true}
+                                              (fn [] [:li {:id "dup"} u])))
                           ["alice" "bob"])])))))
 
 (deftest a-nested-fragment-sharing-its-parents-id-throws
@@ -171,9 +204,10 @@
   (is (thrown-with-msg?
        clojure.lang.ExceptionInfo #"Duplicate fragment id \"x\""
        (w/render-recording
-        (fn [] (w/fragment "x"
+        (fn [] (w/fragment "x" {:static? true}
                            (fn [] [:div {:id "x"}
-                                   (w/fragment "x" (fn [] [:p {:id "x"} "in"]))])))))))
+                                   (w/fragment "x" {:static? true}
+                                               (fn [] [:p {:id "x"} "in"]))])))))))
 
 (deftest a-fragment-body-that-cannot-carry-an-id-throws
   ;; Carried over from `render_test/a-boundary-must-be-able-to-carry-metadata`. A
@@ -186,10 +220,14 @@
 
 (deftest distinct-ids-in-a-collection-are-unaffected
   ;; The check must not make the ordinary case harder — this is the shape every roster
-  ;; has.
-  (let [r (w/render-recording
-           (fn [] [:ul (mapv (fn [u] (w/fragment (str "m-" u)
-                                                 (fn [] [:li {:id (str "m-" u)} u])))
+  ;; has: one fragment per member, each reading its own presence topic.
+  (let [presence (atom {"alice" true "bob" false})
+        r (w/render-recording
+           (fn [] [:ul (mapv (fn [u]
+                               (w/fragment (str "m-" u)
+                                           (fn [] [:li {:id (str "m-" u)}
+                                                   u (w/watch [:presence u]
+                                                              #(get @presence u))])))
                              ["alice" "bob"])]))]
     (is (= ["m-alice" "m-bob"] (sort (keys (:fragments r)))))))
 

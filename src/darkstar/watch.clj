@@ -278,6 +278,70 @@
             {:duplicate-id dup})))
   (merge a b))
 
+(defn- assert-subscribed!
+  "Throws if a fragment read no topic and was not declared `:static?`.
+
+  ## The mistake this catches
+
+  A fragment handed its data as an argument rather than reading it through `watch`:
+
+      (defn job-row [job]                                  ; the job arrives as a value
+        (fragment (str \"job-\" (:id job))
+          (fn [] [:tr {:id (str \"job-\" (:id job))} (:progress job)])))
+
+      (defn job-list []
+        (fragment \"jobs\"
+          (fn [] [:tbody {:id \"jobs\"}
+                  (mapv job-row (watch [:jobs] #(:sorted @cache)))])))
+
+  This renders correctly and then freezes. The row is a patch target that declared no
+  dependency, so no hint can ever reach it — publishing `[:job 7]` finds no fragment
+  that read it and patches nothing. Found in the dashboard, where progress bars
+  updating ten times a second would have been stuck at their first value.
+
+  The fix is for the child to read rather than receive:
+
+      (defn job-row [id]
+        (fragment (str \"job-\" id)
+          (fn [] [:tr {:id (str \"job-\" id)}
+                  (:progress (watch [:job id] #(get @jobs id)))])))
+
+  ## Why this throws rather than warning
+
+  It is the same class of error as a mismatched or duplicated id — an authoring mistake
+  whose symptom appears much later and elsewhere, as a screen that stopped updating.
+  Those throw, so this does too.
+
+  ## Why intent has to be declared
+
+  A patchable-but-never-invalidated fragment is legitimate: a static heading inside a
+  managed subtree, a panel removed wholesale later, a row its parent always replaces.
+  The engine cannot tell that from a forgotten `watch` — both are a patch target with
+  no dependencies.
+
+  Structural heuristics do not separate them either. Judging a silent fragment by
+  whether its parent or siblings read was measured against this project's own test
+  suite: it flagged one legitimate static heading and missed three genuinely broken
+  fixtures. So intent is declared, not inferred — `{:static? true}`.
+
+  Nested fragments are exempt from their own check via bubbling: a fragment that reads
+  nothing itself but contains one that does has non-empty `:topics`, so a hint reaches
+  it through its child.
+
+  A `nil` tree is exempt for the same reason `assert-id!` allows it: a fragment that
+  renders nothing — a row for a member who just left — has nothing to read and no
+  element to patch."
+  [id topics static? tree]
+  (when (and (some? tree) (empty? topics) (not static?))
+    (throw (ex-info
+            (str "Fragment " (pr-str id) " read no topic, so nothing can ever update "
+                 "it — it will render once and then freeze. Read its data with `watch` "
+                 "inside the body rather than passing it in as an argument. If it is "
+                 "genuinely static, say so: (fragment " (pr-str id)
+                 " {:static? true} body-fn).")
+            {:fragment id})))
+  nil)
+
 (defn fragment
   "Marks `body-fn`'s output as a patchable fragment identified by `id`, recording the
   topics its body read.
@@ -291,39 +355,58 @@
       (fragment (member-id username)
         (fn [] [:li {:id (member-id username)} …]))
 
+  The body **must** read at least one topic through `watch`, or contain a fragment that
+  does. A fragment with no dependencies can never be updated, which is a silent freeze
+  rather than an error — see `assert-subscribed!`. For markup that is deliberately
+  static, declare it:
+
+      (fragment \"title\" {:static? true}
+        (fn [] [:h1 {:id \"title\"} \"Builds\"]))
+
   Nested fragments are kept: an inner fragment is recorded in its own right *and* its
   topics bubble up, so a hint reaches both the narrow fragment and any fragment
   containing it. A caller that patches the narrowest match gets minimal updates; one
   that patches the outermost still gets correctness."
-  [id body-fn]
-  (if-not *recording*
-    ;; Checked outside a recording too. A component called at a REPL or in a test is
-    ;; where a mismatched id is cheapest to find, and skipping the check there would
-    ;; mean the tests that exercise components could not catch it.
-    (assert-id! id (body-fn))
-    (let [inner (volatile! {:topics #{} :fragments {} :reads {}})
-          tree (assert-id! id (binding [*recording* inner] (body-fn)))]
-      (vswap! *recording*
-              (fn [acc]
-                (-> acc
-                    ;; Inner fragments first, so this fragment's own entry cannot be
-                    ;; clobbered by the merge.
-                    (update :fragments merge-fragments (:fragments @inner))
-                    (update :fragments merge-fragments
-                            {id {:topics (:topics @inner)
-                                 :tree tree
-                                 ;; This fragment's own reads, for `unchanged?`, and
-                                 ;; its `body-fn`, so it can be re-rendered ALONE
-                                 ;; rather than by re-rendering its parent.
-                                 :reads (:reads @inner)
-                                 :body-fn body-fn
-                                 ;; What this fragment contained. A caller re-rendering
-                                 ;; it needs to know which nested fragments to drop if
-                                 ;; the new render no longer produces them.
-                                 :fragments (:fragments @inner)}})
-                    (update :topics into (:topics @inner))
-                    (update :reads merge (:reads @inner)))))
-      tree)))
+  ([id body-fn] (fragment id nil body-fn))
+  ([id {:keys [static?] :as _opts} body-fn]
+   (if-not *recording*
+     ;; Checked outside a recording too. A component called at a REPL or in a test is
+     ;; where a mismatched id is cheapest to find, and skipping the check there would
+     ;; mean the tests that exercise components could not catch it.
+     ;;
+     ;; The subscription check is NOT made here: with no recording in place there is
+     ;; nowhere for `watch` to record to, so every fragment would look silent.
+     (assert-id! id (body-fn))
+     (let [inner (volatile! {:topics #{} :fragments {} :reads {}})
+           tree (assert-id! id (binding [*recording* inner] (body-fn)))]
+       (vswap! *recording*
+               (fn [acc]
+                 (-> acc
+                     ;; Inner fragments first, so this fragment's own entry cannot be
+                     ;; clobbered by the merge.
+                     (update :fragments merge-fragments (:fragments @inner))
+                     (update :fragments merge-fragments
+                             {id {:topics (:topics @inner)
+                                  :tree tree
+                                  ;; This fragment's own reads, for `unchanged?`, and
+                                  ;; its `body-fn`, so it can be re-rendered ALONE
+                                  ;; rather than by re-rendering its parent.
+                                  :reads (:reads @inner)
+                                  :body-fn body-fn
+                                  ;; Declared static, so `diagnose` and a re-render can
+                                  ;; both skip the subscription check.
+                                  :static? (boolean static?)
+                                  ;; What this fragment contained. A caller re-rendering
+                                  ;; it needs to know which nested fragments to drop if
+                                  ;; the new render no longer produces them.
+                                  :fragments (:fragments @inner)}})
+                     (update :topics into (:topics @inner))
+                     (update :reads merge (:reads @inner)))))
+       ;; After the merge, so a duplicate id is reported first. Both are authoring
+       ;; errors, but a duplicate loses an element from the render entirely, whereas
+       ;; this one freezes an element that is at least present.
+       (assert-subscribed! id (:topics @inner) static? tree)
+       tree))))
 
 (defn- assert-realised!
   "Throws if `tree` contains an unrealised lazy seq.
@@ -380,11 +463,17 @@
   what lets a fragment's dependencies change over time without a full render.
 
   Nested fragments inside `body-fn` are re-recorded and returned in `:fragments`, so a
-  caller can refresh its stored map for the subtree it just rendered."
-  [{:keys [body-fn] :as _fragment} id]
+  caller can refresh its stored map for the subtree it just rendered.
+
+  The subscription check runs here too, carrying `:static?` over from the recorded
+  entry. A fragment's dependencies are data and can change between renders, so one that
+  read a topic at mount can stop reading on a later pass — the same freeze, arriving
+  later."
+  [{:keys [body-fn static?] :as _fragment} id]
   (let [acc (volatile! {:topics #{} :fragments {} :reads {}})
         tree (assert-id! id (binding [*recording* acc] (body-fn)))]
     (assert-realised! tree)
+    (assert-subscribed! id (:topics @acc) static? tree)
     (assoc @acc :tree tree)))
 
 (defn fragments-for-topic
